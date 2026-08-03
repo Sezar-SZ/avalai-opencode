@@ -1,0 +1,9 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python leftovers
+__pycache__/
+*.pyc
+*.pyo
