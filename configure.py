@@ -5,7 +5,7 @@ This script uses only Python's standard library. It:
 - reads an AvalAI key from .env, the shell environment, or a hidden prompt;
 - asks the user to choose one official AvalAI API route;
 - fetches AvalAI's authenticated GET /v1/models catalog;
-- adds or refreshes only provider.avalai in OpenCode's global config;
+- adds or refreshes only providers.avalai in OpenCode's global config;
 - accepts existing JSON or JSONC config (comments and trailing commas);
 - creates an exact-content backup before replacing the config.
 
@@ -35,7 +35,7 @@ from typing import Any
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DOTENV_PATH = PROJECT_DIR / ".env"
-CONFIG_PATH = Path.home() / ".config" / "opencode" / "opencode.json"
+CONFIG_DIR = Path.home() / ".config" / "opencode"
 SCHEMA_URL = "https://opencode.ai/config.json"
 PROVIDER_ID = "avalai"
 TIMEOUT_SECONDS = 20
@@ -368,7 +368,7 @@ def build_model_map(records: list[dict[str, Any]]) -> tuple[dict[str, Any], int]
 
         tool_call = record.get("supports_function_calling")
         if isinstance(tool_call, bool):
-            model["tool_call"] = tool_call
+            model["capabilities"] = {"tools": tool_call}
 
         context = positive_number(record.get("max_input_tokens"))
         output = positive_number(record.get("max_output_tokens"))
@@ -383,7 +383,7 @@ def build_model_map(records: list[dict[str, Any]]) -> tuple[dict[str, Any], int]
                 cost: dict[str, Any] = {"input": input_cost, "output": output_cost}
                 cache_read = positive_number(pricing.get("cached_input"))
                 if cache_read is not None:
-                    cost["cache_read"] = cache_read
+                    cost["cache"] = {"read": cache_read}
                 model["cost"] = cost
 
         models[model_id] = model
@@ -545,6 +545,15 @@ def parse_json_or_jsonc(text: str, path: Path) -> dict[str, Any]:
     return value
 
 
+def select_config_path(directory: Path) -> Path:
+    """Update an existing config; prefer JSONC and use it for new setups."""
+    jsonc = directory / "opencode.jsonc"
+    if jsonc.exists():
+        return jsonc
+    json_path = directory / "opencode.json"
+    return json_path if json_path.exists() else jsonc
+
+
 def load_existing_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -557,25 +566,25 @@ def load_existing_config(path: Path) -> dict[str, Any]:
 
 
 def config_without_avalai(config: dict[str, Any]) -> dict[str, Any]:
-    """Return a comparison snapshot that ignores only provider.avalai.
+    """Return a comparison snapshot that ignores only providers.avalai.
 
-    Adding the first provider necessarily creates the parent `provider` object.
+    Adding the first provider necessarily creates the parent `providers` object.
     An empty parent object is therefore normalized away in the snapshot so a
     previously blank config still passes the unrelated-settings safety check.
     """
     snapshot = copy.deepcopy(config)
-    providers = snapshot.get("provider")
+    providers = snapshot.get("providers")
     if isinstance(providers, dict):
         providers.pop(PROVIDER_ID, None)
         if not providers:
-            snapshot.pop("provider", None)
+            snapshot.pop("providers", None)
     return snapshot
 
 
 def choose_key_storage() -> str:
     print("\n🔐 How should OpenCode read the AvalAI key?")
     print("  1) Environment variable — {env:AVALAI_API_KEY} (recommended)")
-    print("  2) Hard-code it in opencode.json (simpler, but less secure)")
+    print("  2) Hard-code it in the OpenCode config (simpler, but less secure)")
     choice = input("👉 Choice [1]: ").strip() or "1"
     if choice not in {"1", "2"}:
         raise SetupError("Please choose 1 or 2")
@@ -637,38 +646,39 @@ def main() -> int:
 
     key_storage = choose_key_storage()
 
-    config_existed = CONFIG_PATH.exists()
-    config = load_existing_config(CONFIG_PATH)
+    config_path = select_config_path(CONFIG_DIR)
+    config_existed = config_path.exists()
+    config = load_existing_config(config_path)
     if not config_existed:
         config["$schema"] = SCHEMA_URL
     preserved_before = config_without_avalai(config)
 
-    providers = config.setdefault("provider", {})
+    providers = config.setdefault("providers", {})
     if not isinstance(providers, dict):
-        raise SetupError('The existing "provider" setting is not a JSON object')
+        raise SetupError('The existing "providers" setting is not a JSON object')
 
     api_key_setting = "{env:AVALAI_API_KEY}" if key_storage == "env" else api_key
     providers[PROVIDER_ID] = {
-        "npm": "@ai-sdk/openai-compatible",
+        "package": "@opencode/ai/providers/openai-compatible",
         "name": "AvalAI",
-        "options": {
+        "settings": {
             "baseURL": f"{root.rstrip('/')}/v1",
             "apiKey": api_key_setting,
         },
         "models": models,
     }
 
-    # Defensive invariant: everything except provider.avalai must be identical.
+    # Defensive invariant: everything except providers.avalai must be identical.
     if config_without_avalai(config) != preserved_before:
         raise SetupError(
             "Internal safety check failed: an unrelated OpenCode setting changed. "
             "Nothing was written."
         )
 
-    backup = write_config(config, CONFIG_PATH)
+    backup = write_config(config, config_path)
 
-    print(f"\n✅ OpenCode configured: {CONFIG_PATH}")
-    print("🧩 Only provider.avalai was added or replaced")
+    print(f"\n✅ OpenCode configured: {config_path}")
+    print("🧩 Only providers.avalai was added or replaced")
     print("🔒 The resulting config is readable only by your user (mode 0600)")
     if backup:
         print(f"💾 Exact original backup: {backup}")
@@ -685,7 +695,7 @@ def main() -> int:
             print("   export AVALAI_API_KEY='your-real-key'")
             print("   opencode")
     else:
-        print("\n⚠️  The AvalAI key is stored directly in opencode.json")
+        print(f"\n⚠️  The AvalAI key is stored directly in {config_path.name}")
         print("   Keep that file and its backups private")
 
     print("\n🚀 In OpenCode:")

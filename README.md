@@ -1,6 +1,6 @@
 # AvalAI → OpenCode helper 🤝🤖
 
-A tiny **run-once** helper that asks AvalAI for its current chat-model catalog and adds those models to OpenCode as `provider.avalai`.
+A tiny **run-once** OpenCode V2 helper that asks AvalAI for its current chat-model catalog and adds those models to OpenCode as `providers.avalai`.
 
 
 ```bash
@@ -70,7 +70,7 @@ During setup you choose:
 ```text
 🔐 How should OpenCode read the AvalAI key?
   1) Environment variable — {env:AVALAI_API_KEY} (recommended)
-  2) Hard-code it in opencode.json (simpler, but less secure)
+  2) Hard-code it in opencode.jsonc (simpler, but less secure)
 👉 Choice [1]:
 ```
 
@@ -97,25 +97,39 @@ Or export the variable through your preferred shell/secret manager before runnin
 
 ### Option 2: hard-code the key ⚠️
 
-The real key is written directly under `provider.avalai.options.apiKey` in:
+The real key is written directly under `providers.avalai.settings.apiKey` in:
 
 ```text
-~/.config/opencode/opencode.json
+~/.config/opencode/opencode.jsonc
 ```
 
 This is convenient, but less secure. The helper sets the config permission to `0600`, meaning only your user should be able to read it. Backups may also contain the key after later runs, so keep them private.
+
+## Configuration file
+
+For a new setup, the helper creates `~/.config/opencode/opencode.jsonc`.
+If `opencode.jsonc` already exists, it updates that file. Otherwise, if
+`opencode.json` exists, it updates that file instead. When both exist, JSONC
+is selected and the JSON file is left untouched. Backups use the selected
+file's name.
+
+The generated provider uses native V2 fields: `providers`, `package`,
+`settings`, `capabilities.tools`, and `cost.cache.read`. Existing legacy
+`provider.avalai` settings are left untouched; the native V2 entry takes
+precedence. JSONC comments and formatting are removed when the selected file
+is rewritten; the exact original content is retained in its backup.
 
 ## 🧩 Existing OpenCode settings are preserved
 
 The helper adds or replaces only:
 
 ```text
-provider.avalai
+providers.avalai
 ```
 
 It leaves all other providers and unrelated settings semantically unchanged, including OpenAI, Anthropic, Google, OpenRouter, local providers, MCP servers, agents, permissions, plugins, `model`, and `small_model`.
 
-A defensive check runs before writing: if anything outside `provider.avalai` changed in memory, the helper stops.
+A defensive check runs before writing: if anything outside `providers.avalai` changed in memory, the helper stops.
 
 
 ## 💾 Backup location
@@ -123,13 +137,13 @@ A defensive check runs before writing: if anything outside `provider.avalai` cha
 Before changing an existing config, the helper creates:
 
 ```text
-~/.config/opencode/opencode.json.backup-YYYYMMDD-HHMMSS
+~/.config/opencode/opencode.jsonc.backup-YYYYMMDD-HHMMSS
 ```
 
 Example:
 
 ```text
-~/.config/opencode/opencode.json.backup-20260803-143012
+~/.config/opencode/opencode.jsonc.backup-20260803-143012
 ```
 
 The exact backup path is printed after a successful run.
@@ -137,15 +151,15 @@ The exact backup path is printed after a successful run.
 Find the newest backup:
 
 ```bash
-ls -1t ~/.config/opencode/opencode.json.backup-* 2>/dev/null | head -n 1
+ls -1t ~/.config/opencode/opencode.jsonc.backup-* 2>/dev/null | head -n 1
 ```
 
 Restore one:
 
 ```bash
-cp ~/.config/opencode/opencode.json.backup-YYYYMMDD-HHMMSS \
-   ~/.config/opencode/opencode.json
-chmod 600 ~/.config/opencode/opencode.json
+cp ~/.config/opencode/opencode.jsonc.backup-YYYYMMDD-HHMMSS \
+   ~/.config/opencode/opencode.jsonc
+chmod 600 ~/.config/opencode/opencode.jsonc
 ```
 
 ## 🧯 API-key errors
@@ -178,4 +192,4 @@ Run the same command again:
 ./run.sh
 ```
 
-Only `provider.avalai` is refreshed.
+Only `providers.avalai` is refreshed.
